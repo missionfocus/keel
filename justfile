@@ -41,13 +41,11 @@ check:
 render-setup:
     ./render-setup.sh
 
-# Create a new VM from the pre-built image. Tags decide what it becomes:
+# Create a new VM from the pre-built image. No PAT needed -- the package
+# published public by default from this public repo. Tags decide what it
+# becomes:
 #   dev / prod  -> grants the onepassword integration (and gh on dev)
 #   backup      -> keel enables the daily borg timer
-# The GHCR package needs to be public (repo Settings -> Packages, after the
-# first build) for this to need no --registry-auth. Until then, pass one:
-#   ssh exe.dev new --name mybox --image={{image}}:latest \
-#       --registry-auth <user>:<PAT with read:packages> --tag dev
 new name tags='dev':
     ssh exe.dev new --name {{name}} --image={{image}}:latest --tag {{tags}}
 

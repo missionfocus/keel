@@ -98,10 +98,8 @@ ssh exe.dev new --name mybox --image=ghcr.io/missionfocus/keel:latest --tag dev
 ssh exe.dev new --name mybox --image=ghcr.io/missionfocus/keel:latest --tag dev,backup
 ```
 
-or `just new mybox dev,backup`. This needs the GHCR package to be public (repo
-**Settings → Packages**, a one-time manual step after the first successful
-build — GHCR packages don't inherit repo visibility automatically). Until then,
-pass `--registry-auth <user>:<PAT with read:packages>`.
+or `just new mybox dev,backup`. No PAT needed — the package published public by
+default from this public repo.
 
 Pin a digest instead of `:latest` (`just digest`) when you want a VM to stay put
 across image rebuilds.
