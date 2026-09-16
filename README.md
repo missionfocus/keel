@@ -271,8 +271,8 @@ Three things to get right:
    descendant.
 
 To add a tool to keel itself: apt if noble packages it (security updates then ride
-the weekly rebuild for free), otherwise a pinned `ARG <TOOL>_VERSION` plus a
-Renovate `customManagers` entry in [`renovate.json`](renovate.json).
+the weekly rebuild for free), otherwise a pinned `ARG <TOOL>_VERSION` in the
+Containerfile, bumped by hand for now (no Renovate on this repo yet).
 
 Note Ubuntu renames two binaries to avoid collisions — `bat` installs as
 `batcat`, `fd-find` as `fdfind`. The Containerfile symlinks both; anything else
@@ -287,7 +287,7 @@ shows the pattern).
 | What | How |
 |---|---|
 | exeuntu security fixes | automatic — the weekly workflow run |
-| pinned tool versions | Renovate PRs against the `ARG` lines |
+| pinned tool versions | by hand, `ARG` lines in the Containerfile (no Renovate on this repo yet) |
 | apt packages | automatic — the weekly rebuild re-resolves them |
 | dotfiles on a running VM | `keel-update-dotfiles` |
 | dotfiles baked into the image | rebuild (`just build`) |
@@ -298,10 +298,6 @@ shows the pattern).
 removes its timers, taking the position that the weekly image rebuild is the
 update mechanism — and since keel rebuilds weekly on the same cadence, adding it
 back would duplicate the machinery and fight the image for package ownership.
-
-Renovate needs the GitHub App installed on this repo (or the `missionfocus` org)
-for the `renovate.json` rules above to actually run — it wasn't as of this
-repo's creation.
 
 ## Gotchas
 
