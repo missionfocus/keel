@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+#
+# keel-backup -- daily backup of this VM into the shared borg repository.
+#
+# Shape (see the README for the reasoning):
+#   1. fetch credentials from 1Password Connect; nothing is stored on the VM
+#   2. VACUUM INTO a consistent snapshot of every declared SQLite database
+#   3. borg create over $HOME + /opt + /var/lib, minus the rebuildable parts
+#
+# This VM's key is APPEND-ONLY at rsync.net, so there is deliberately no prune
+# and no compact here -- a compromised VM must not be able to delete the fleet's
+# history. Retention runs weekly from the steward (a workstation with the
+# full-access key). See the README, "Retention".
+
+set -euo pipefail
+
+CONF="${KEEL_CONF_DIR:-/etc/keel}"
+DUMPS="${KEEL_DUMP_DIR:-/var/lib/keel/dumps}"
+RUN="${RUNTIME_DIRECTORY:-/run/keel}"
+
+log()  { printf '[keel-backup] %s\n' "$*"; }
+die()  { printf '[keel-backup] ERROR: %s\n' "$*" >&2; exit 1; }
+
+[ -r "$CONF/secrets.conf" ] || die "missing $CONF/secrets.conf"
+# shellcheck source=/dev/null
+. "$CONF/secrets.conf"
+
+: "${BORG_REPO:?BORG_REPO must be set in $CONF/secrets.conf}"
+: "${KEEL_REF_PASSPHRASE:?KEEL_REF_PASSPHRASE must be set in $CONF/secrets.conf}"
+: "${KEEL_REF_SSH_KEY:?KEEL_REF_SSH_KEY must be set in $CONF/secrets.conf}"
+
+export BORG_REPO
+export BORG_REMOTE_PATH="${BORG_REMOTE_PATH:-borg14}"
+
+# --- health ping (optional) -------------------------------------------------
+HC_URL=""
+if [ -n "${KEEL_REF_HEALTHCHECKS:-}" ]; then
+    HC_URL="$(keel-secret "$KEEL_REF_HEALTHCHECKS" 2>/dev/null || true)"
+fi
+ping_hc() {
+    [ -n "$HC_URL" ] || return 0
+    curl --fail --silent --max-time 10 --retry 2 -o /dev/null "$HC_URL${1:+/$1}" || true
+}
+trap 'rc=$?; [ $rc -ne 0 ] && ping_hc fail; exit $rc' EXIT
+
+ping_hc start
+
+# --- credentials ------------------------------------------------------------
+# The passphrase is never an environment variable: BORG_PASSCOMMAND makes borg
+# invoke keel-secret itself, so the value never lands in /proc/<pid>/environ.
+export BORG_PASSCOMMAND="keel-secret $KEEL_REF_PASSPHRASE"
+
+# The SSH key goes into an agent, not a file -- no filesystem path exists for it
+# at any point. The agent is scoped to this process and dies with it.
+eval "$(ssh-agent -s)" >/dev/null
+trap 'rc=$?; ssh-agent -k >/dev/null 2>&1 || true; [ $rc -ne 0 ] && ping_hc fail; exit $rc' EXIT
+keel-secret "$KEEL_REF_SSH_KEY" | ssh-add - >/dev/null 2>&1 \
+    || die "could not load the rsync.net key into ssh-agent"
+
+export BORG_RSH="ssh -o StrictHostKeyChecking=yes \
+-o UserKnownHostsFile=/home/exedev/.ssh/known_hosts_ca \
+-o IdentitiesOnly=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+-o ConnectTimeout=30"
+
+# --- SQLite snapshots -------------------------------------------------------
+# VACUUM INTO takes only a read transaction, so writers are not blocked for
+# long, and it produces a compacted, consistent file. Never let borg read a
+# live database: that is the classic WAL-corruption trap, and it matters more
+# here because the backup scope is a broad sweep rather than named paths.
+mkdir -p "$DUMPS"
+chmod 0700 "$DUMPS"
+live_dbs=()
+if [ -r "$CONF/sqlite" ]; then
+    while IFS= read -r db || [ -n "$db" ]; do
+        db="${db%%#*}"; db="$(printf '%s' "$db" | xargs || true)"
+        [ -n "$db" ] || continue
+        if [ ! -f "$db" ]; then
+            log "declared but missing, skipping: $db"
+            continue
+        fi
+        # Flat, collision-free, STABLE name: two databases may share a basename,
+        # and a stable name keeps archive listings readable. The archive itself
+        # carries the date, so per-day retrieval needs no date in the filename.
+        out="$DUMPS/$(systemd-escape --path "$db").sqlite"
+        rm --force "$out"
+        if sqlite3 "$db" "VACUUM INTO '$out'"; then
+            log "dumped $db -> $(basename "$out")"
+            live_dbs+=("$db")
+        else
+            die "VACUUM INTO failed for $db"
+        fi
+    done < "$CONF/sqlite"
+fi
+
+# --- exclude list -----------------------------------------------------------
+# Built fresh each run: the static list, plus every live database declared
+# above. The manifest does double duty, so a live DB cannot be archived by
+# accident.
+exclude_file="$RUN/exclude"
+mkdir -p "$RUN"
+: > "$exclude_file"
+[ -r "$CONF/exclude" ] && cat "$CONF/exclude" >> "$exclude_file"
+for db in ${live_dbs+"${live_dbs[@]}"}; do
+    printf '%s\n' "$db" "$db-wal" "$db-shm" >> "$exclude_file"
+done
+
+# --- roots ------------------------------------------------------------------
+# $HOME is the rule ("back up everything I made"); /opt and /var/lib catch
+# systemd service state, which lives outside $HOME under the cooper layout.
+# Excludes -- not includes -- define the boundary: a forgotten include is
+# discovered at restore time and is permanent, a forgotten exclude just makes
+# the archive bigger and is noticed in a day.
+roots=(/home/exedev /opt /var/lib)
+if [ -r "$CONF/paths" ]; then
+    while IFS= read -r extra || [ -n "$extra" ]; do
+        extra="${extra%%#*}"; extra="$(printf '%s' "$extra" | xargs || true)"
+        [ -n "$extra" ] && roots+=("$extra")
+    done < "$CONF/paths"
+fi
+
+existing=()
+for r in "${roots[@]}"; do [ -e "$r" ] && existing+=("$r"); done
+[ ${#existing[@]} -gt 0 ] || die "no backup roots exist"
+
+# --- create -----------------------------------------------------------------
+# --lock-wait: the repository lock is exclusive and fleet-wide. The timer's
+# FixedRandomDelay spaces VMs deterministically, but a queued VM should wait
+# rather than fail.
+log "creating archive in $BORG_REPO"
+borg create \
+    --lock-wait 3600 \
+    --verbose --stats --show-rc \
+    --compression zstd \
+    --one-file-system \
+    --exclude-caches \
+    --exclude-if-present .nobackup \
+    --exclude-from "$exclude_file" \
+    "::{hostname}-{now:%Y-%m-%dT%H:%M:%S}" \
+    "${existing[@]}"
+
+log "done"
+ping_hc

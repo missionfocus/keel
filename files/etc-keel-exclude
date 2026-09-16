@@ -1,0 +1,32 @@
+# /etc/keel/exclude -- borg exclude patterns, one per line.
+#
+# The scope rule is EXCLUSION, not inclusion. A forgotten include is discovered
+# at restore time and the gap is permanent; a forgotten exclude just makes the
+# archive bigger and is noticed within a day. So: sweep everything, subtract
+# what is provably rebuildable.
+#
+# Live SQLite databases are NOT listed here -- declaring them in `sqlite` adds
+# them automatically, together with their -wal/-shm files.
+
+# Caches and package/tool stores: large, and rebuilt by a command.
+sh:/home/exedev/.cache
+sh:/home/exedev/.local/share/mise
+sh:/home/exedev/.local/share/chezmoi
+sh:/home/exedev/go/pkg/mod
+sh:/home/exedev/.npm
+sh:/home/exedev/.cargo/registry
+sh:/home/exedev/**/node_modules
+
+# Agent working state: regenerated, and can be large.
+sh:/home/exedev/.claude/projects
+sh:/home/exedev/.codex/sessions
+
+# System-level stores that the image or a package manager owns.
+sh:/var/lib/docker
+sh:/var/lib/containerd
+sh:/var/lib/apt
+sh:/var/lib/snapd
+sh:/var/lib/systemd/coredump
+
+# Journals: useful live, not worth archiving daily.
+sh:/var/lib/systemd/catalog

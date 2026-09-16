@@ -1,0 +1,25 @@
+[Unit]
+Description=keel: daily backup
+Documentation=https://github.com/missionfocus/keel/blob/main/README.md
+
+[Timer]
+OnCalendar=*-*-* 01:00:00
+# Every backup-tagged VM writes to ONE repository with an exclusive lock, so
+# spacing must be deterministic rather than re-rolled at each boot -- otherwise
+# the fleet plays the birthday problem against a lock.
+#
+# FixedRandomDelay derives the offset from /etc/machine-id, so each VM claims a
+# slot once and keeps it, spreading the fleet across 01:00-04:00 UTC.
+#
+# THIS IS WHY the Containerfile re-truncates /etc/machine-id as its last step:
+# exeuntu empties it so each VM generates its own, but any apt-get in a derived
+# image bakes a new one back in. A shared machine-id makes every VM compute the
+# SAME offset and the spacing collapses completely.
+RandomizedDelaySec=3h
+FixedRandomDelay=yes
+# Catch up a VM that was powered off when its slot came round.
+Persistent=true
+Unit=keel-backup.service
+
+[Install]
+WantedBy=timers.target

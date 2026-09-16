@@ -1,0 +1,7 @@
+# /etc/keel/paths -- EXTRA backup roots, one absolute path per line.
+#
+# The defaults are already /home/exedev, /opt and /var/lib, which cover
+# everything you made plus systemd service state. This file is only for data
+# that lives somewhere else entirely (a mounted volume, say).
+#
+# Empty by default.

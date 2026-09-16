@@ -1,0 +1,16 @@
+# /etc/keel/sqlite -- one SQLite database path per line, absolute.
+#
+# Each is snapshotted daily with `VACUUM INTO` (consistent, compacted, only a
+# read transaction so writers are not blocked for long) into /var/lib/keel/dumps,
+# which is inside the backup scope.
+#
+# Every path listed here is ALSO added to borg's exclude list, along with its
+# -wal and -shm siblings. That is the point of declaring them: a live SQLite
+# file must never be read directly by borg, and this manifest is what guarantees
+# it. The exclusion is automatic -- do not also list them in `exclude`.
+#
+# Empty by default. A VM that declares nothing dumps nothing and says so in the
+# journal.
+#
+# Example:
+# /var/lib/lodestone/lodestone.db

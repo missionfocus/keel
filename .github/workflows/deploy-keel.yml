@@ -1,0 +1,105 @@
+name: Build and push keel image
+
+# keel's whole repo is this image -- there is no local build loop, this
+# workflow is the only thing that builds it.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # The weekly rebuild is load-bearing, not housekeeping. exeuntu rebuilds itself
+  # weekly with --no-cache to absorb Ubuntu security updates, and keel consumes it
+  # as a bare :latest -- which Renovate cannot bump, because there is no version
+  # to compare. This schedule is the ONLY thing that pulls those fixes through.
+  # Without it, keel silently pins whatever exeuntu shipped the day it last built.
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/missionfocus/keel
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # These scripts end up on every VM built from this image, and a syntax
+      # error would only surface at 01:00 on a machine nobody is watching.
+      - name: Check shell syntax
+        run: |
+          for s in files/keel-secret files/keel-profile files/keel-backup; do
+            bash -n "$s" && echo "ok: $s"
+          done
+          ./render-setup.sh | bash -n /dev/stdin && echo "ok: render-setup.sh output"
+
+      # render-setup.sh's output is what --setup-script actually ships as, and
+      # exe.dev hard-caps that at 10 KiB -- catch a regression here, not at
+      # `ssh exe.dev new` time.
+      - name: Check render-setup.sh size
+        run: |
+          size=$(./render-setup.sh | wc -c | tr -d ' ')
+          [ "$size" -lt 10240 ] && echo "ok: render-setup.sh size ($size bytes)" \
+            || { echo "FAIL: render-setup.sh is $size bytes -- exe.dev's --setup-script cap is 10240"; exit 1; }
+
+      # systemd-analyze verify catches typos in directives that would otherwise
+      # fail silently at boot -- a misspelled FixedRandomDelay= is exactly the
+      # kind of thing that turns backup spacing off without warning.
+      - name: Verify systemd units
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq systemd
+          cd files
+          # Exit status also covers the [Install]-less keel-backup.service, which
+          # is intentional -- filter that one known-good warning out.
+          systemd-analyze verify --recursive-errors=no \
+            ./keel-profile.service ./keel-backup.service ./keel-backup.timer 2>&1 \
+            | grep -v 'keel-backup.service.*Install' || true
+
+      - name: Log in to ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      # No cache: the point of the weekly run is to re-pull exeuntu:latest and
+      # re-resolve apt, so a cache hit would defeat it.
+      - name: Build and push (linux/amd64)
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          no-cache: true
+          pull: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Summary
+        if: github.event_name != 'pull_request'
+        run: |
+          {
+            echo "### keel image published"
+            echo
+            echo '```'
+            echo "${IMAGE}@${DIGEST}"
+            echo '```'
+            echo
+            echo "Boot a VM from it:"
+            echo '```sh'
+            echo "ssh exe.dev new --name <vm> --image=${IMAGE}@${DIGEST} --tag dev"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          DIGEST: ${{ steps.build.outputs.digest }}

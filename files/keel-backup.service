@@ -1,0 +1,31 @@
+[Unit]
+Description=keel: daily backup to the shared borg repository
+Documentation=https://github.com/missionfocus/keel/blob/main/README.md
+After=network-online.target
+Wants=network-online.target
+# Inert until a VM is actually configured for backups. Belt and braces next to
+# the `backup` tag gate: the timer should not even be enabled without it, but a
+# unit that cannot work should refuse to start rather than fail noisily.
+ConditionPathExists=/etc/keel/secrets.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/keel-backup
+
+# Secrets are fetched at run time into this tmpfs directory (the UUID cache and
+# the generated exclude list). systemd removes it when the unit stops, so
+# nothing survives the run and nothing ever touches the disk.
+RuntimeDirectory=keel
+RuntimeDirectoryMode=0700
+
+# The fleet shares one repository lock; --lock-wait 3600 means a queued VM can
+# legitimately sit for an hour before its own work starts.
+TimeoutStartSec=6h
+
+# Backups are never the most important thing running on the box.
+Nice=10
+IOSchedulingClass=idle
+
+# No [Install] section: this is timer-driven, and keel-profile enables the
+# TIMER (which has one) based on the VM's tags. Adding [Install] here would
+# make the backup run at every boot.

@@ -1,0 +1,17 @@
+[Unit]
+Description=keel: apply exe.dev tag-driven profile
+Documentation=https://github.com/missionfocus/keel/blob/main/README.md
+# Reflection is an HTTPS call to reflection.int.exe.xyz, so the network has to
+# be up. Note exeuntu's own exe-setup.service only orders After=network.target,
+# which suggests the network is not reliably usable that early -- the script
+# retries rather than trusting boot ordering alone.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/keel-profile
+
+[Install]
+WantedBy=multi-user.target

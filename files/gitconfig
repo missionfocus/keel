@@ -1,0 +1,24 @@
+# /etc/gitconfig -- the SYSTEM tier, read before ~/.gitconfig.
+#
+# This is exe.dev-specific, which is exactly why it lives in the image and not
+# in the chezmoi dotfiles: those are cross-platform and must stay that way.
+# Because git reads system -> global -> local, this composes with the
+# chezmoi-managed ~/.gitconfig without touching it.
+#
+# The exe.dev GitHub integration exposes every accessible repo at
+# https://github.int.exe.xyz/OWNER/REPO and picks the right integration itself,
+# so one rewrite per owner makes `git clone https://github.com/...` just work
+# with no token on the VM and no change to muscle memory.
+#
+# Scoped to the owner prefix on purpose. A blanket github.com rewrite would send
+# public third-party clones through the integration too, and a repo with no
+# matching integration FAILS rather than falling through to the public endpoint.
+# git picks the longest matching insteadOf prefix, so these are exact.
+
+[url "https://github.int.exe.xyz/andreweick/"]
+	insteadOf = https://github.com/andreweick/
+	insteadOf = git@github.com:andreweick/
+
+[url "https://github.int.exe.xyz/missionfocus/"]
+	insteadOf = https://github.com/missionfocus/
+	insteadOf = git@github.com:missionfocus/

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#
+# keel-profile -- read this VM's own exe.dev tags and switch on what they ask
+# for. Runs once at boot (keel-profile.service).
+#
+# The Reflection integration publishes a VM's metadata back to it and is
+# attached auto:all by default, so this needs no per-VM setup. Tag vocabulary:
+#
+#   dev / prod   grant the `onepassword` integration (platform-side; nothing
+#                for this script to do -- it is an attachment, not a switch)
+#   backup       enable keel-backup.timer
+#
+# `backup` is deliberately separate from `prod`: "is production" and "has data
+# worth keeping" are different questions. A stateless prod service should not
+# run a nightly job archiving nothing, and a dev box may hold something you
+# would hate to lose. See the README.
+#
+# Promotion is therefore:  ssh exe.dev tag <vm> backup && ssh exe.dev restart <vm>
+
+set -euo pipefail
+
+REFLECTION="${KEEL_REFLECTION:-https://reflection.int.exe.xyz}"
+
+log() { printf 'keel-profile: %s\n' "$*"; }
+
+# network-online.target is not a guarantee that the integration host resolves
+# yet, so retry rather than making boot order load-bearing.
+tags_json="$(curl --fail --silent --show-error --max-time 15 \
+                  --retry 5 --retry-delay 3 --retry-all-errors \
+                  "$REFLECTION/tags" 2>/dev/null || true)"
+
+if [ -z "$tags_json" ]; then
+    log "could not read $REFLECTION/tags -- leaving units as they are"
+    exit 0
+fi
+
+# Tolerant of the response shape: matches a bare array ["a","b"] and an
+# object {"tags":["a","b"]} alike, so an upstream change does not silently
+# turn every tag off.
+has_tag() {
+    printf '%s' "$tags_json" \
+        | jq -e --arg t "$1" '[.. | strings] | index($t) != null' >/dev/null 2>&1
+}
+
+if has_tag backup; then
+    log "tag 'backup' present -- enabling keel-backup.timer"
+    systemctl enable --now keel-backup.timer
+else
+    log "tag 'backup' absent -- keel-backup.timer stays off"
+    systemctl disable --now keel-backup.timer 2>/dev/null || true
+fi
