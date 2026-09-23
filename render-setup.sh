@@ -100,7 +100,7 @@ done
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
 sudo apt-get install --assume-yes --no-install-recommends \\
-    zsh fish bat fzf zoxide just git-delta fd-find
+    zsh fish bat fzf zoxide just git-delta fd-find unattended-upgrades
 sudo ln --symbolic --force /usr/bin/batcat /usr/local/bin/bat
 sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
 bat --version && fd --version
@@ -138,6 +138,8 @@ embed keel-secret               /usr/local/bin/keel-secret        0755
 embed keel-profile              /usr/local/bin/keel-profile       0755
 embed keel-profile.service      /etc/systemd/system/keel-profile.service   0644
 
+embed zz-keel-auto-upgrades /etc/apt/apt.conf.d/zz-keel-auto-upgrades 0644
+
 cat <<'SCRIPT'
 sudo systemctl daemon-reload
 sudo systemctl enable --now keel-profile.service
@@ -158,6 +160,11 @@ printf '%s\n' '#!/bin/sh' \
 sudo chmod 0755 /usr/local/bin/keel-update-dotfiles
 
 sudo chsh --shell /bin/zsh exedev
+
+# Start only after setup's package/config work is complete.
+sudo systemctl unmask apt-daily.service apt-daily-upgrade.service \
+    apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service
+sudo systemctl enable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service
 
 # No /etc/machine-id re-truncation: that landmine is specific to baking a
 # package install into a SHARED Docker image layer. On a live VM, systemd

@@ -293,16 +293,44 @@ shows the pattern).
 |---|---|
 | exeuntu security fixes | automatic — the weekly workflow run |
 | pinned tool versions | by hand, `ARG` lines in the Containerfile (no Renovate on this repo yet) |
-| apt packages | automatic — the weekly rebuild re-resolves them |
+| apt packages in new images | automatic — the weekly rebuild re-resolves them |
+| Ubuntu security updates on running VMs | daily unattended upgrades (existing VMs need migration) |
 | dotfiles on a running VM | `keel-update-dotfiles` |
 | dotfiles baked into the image | rebuild (`just build`) |
 | what a VM backs up | edit `/etc/keel/*` on the VM |
 | whether a VM backs up | `just enable-backup <vm>` — no rebuild |
 
-`unattended-upgrades` is deliberately **not** installed. exeuntu masks it and
-removes its timers, taking the position that the weekly image rebuild is the
-update mechanism — and since keel rebuilds weekly on the same cadence, adding it
-back would duplicate the machinery and fight the image for package ownership.
+**Running VMs receive unattended Ubuntu security updates.** Both launch paths
+explicitly install `unattended-upgrades`, override exeuntu's periodic-APT disable,
+and unmask/enable `apt-daily.timer`, `apt-daily-upgrade.timer`, and the
+`unattended-upgrades.service` shutdown helper. The timers refresh catalogs and
+install eligible updates daily with Ubuntu's randomized scheduling; the shutdown
+helper is not itself the upgrade scheduler.
+
+`files/zz-keel-auto-upgrades` is the shared policy. Ubuntu's default allowed
+origins remain unchanged: this does not opt Tailscale or other third-party
+repositories into automatic upgrades, nor update downloaded standalone binaries.
+Automatic reboots are **off**; package updates can still restart services.
+Operators should check `/var/run/reboot-required` and arrange any required reboot.
+
+Weekly rebuilds keep **new images** fresh; unattended upgrades maintain **running
+VMs**. Rebuilding the image does not enable this on existing VMs: those need the
+same policy file and unit unmask/enable steps applied once. See
+[issue #3](https://github.com/missionfocus/keel/issues/3) for migration commands
+and verification.
+
+Inspect a running VM with:
+
+```sh
+apt-config dump | grep -E 'APT::Periodic|Unattended-Upgrade::Automatic-Reboot'
+systemctl list-timers --all apt-daily.timer apt-daily-upgrade.timer
+sudo journalctl -u apt-daily.service -u apt-daily-upgrade.service
+sudo tail /var/log/unattended-upgrades/unattended-upgrades.log
+```
+
+Logs may be absent before the first run. To preview eligible updates without
+installing them, run `sudo apt-get update` followed by
+`sudo unattended-upgrade --dry-run --debug`.
 
 ## Gotchas
 

@@ -27,6 +27,7 @@ digest:
 check:
     #!/usr/bin/env bash
     set -euo pipefail
+    bash tests/check-apt-policy.sh
     for s in files/keel-secret files/keel-profile files/keel-backup; do
         bash -n "$s" && echo "ok: $s"
     done

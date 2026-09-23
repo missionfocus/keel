@@ -28,6 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Check unattended-upgrade policy
+        run: bash tests/check-apt-policy.sh
+
       # These scripts end up on every VM built from this image, and a syntax
       # error would only surface at 01:00 on a machine nobody is watching.
       - name: Check shell syntax
