@@ -130,6 +130,13 @@ this optimizes for.
 
 ## Use
 
+**APT catalogs are included.** Keel retains `/var/lib/apt/lists` after installing
+its tools, so a new VM does not start with an empty package catalog. This trades
+a slightly larger image for less first-use setup when installing extra packages;
+it does not retain downloaded `.deb` installers. The catalog reflects build time,
+not launch time: run `sudo apt update` to refresh it, especially if an install
+fails because a recorded package version is no longer available.
+
 **GitHub just works.** `/etc/gitconfig` rewrites both of my owners to the
 integration host, so ordinary URLs work with no token on the VM:
 

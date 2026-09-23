@@ -44,6 +44,9 @@ SHELL ["/bin/bash", "-euxo", "pipefail", "-c"]
 # with no version tracking of our own. Everything already in exeuntu (git, curl,
 # jq, sqlite3, rsync, vim, neovim, ripgrep, fd, gh, uv, Go, Docker, Tailscale)
 # is deliberately absent.
+# Keep APT's package catalogs so new dev VMs can install additional packages
+# without first downloading the entire catalog. They reflect build time; run
+# apt-get update when fresh repository metadata is needed.
 # ---------------------------------------------------------------------------
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --assume-yes --no-install-recommends \
@@ -55,7 +58,6 @@ RUN apt-get update \
         just \
         git-delta \
         fd-find \
-    && rm --recursive --force /var/lib/apt/lists/* \
     # Ubuntu renames both of these to avoid binary collisions (bacula, fdclone).
     # Without the symlinks, config expecting the upstream names silently no-ops.
     && ln --symbolic --force /usr/bin/batcat /usr/local/bin/bat \
