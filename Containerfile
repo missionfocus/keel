@@ -58,6 +58,7 @@ RUN apt-get update \
         just \
         git-delta \
         fd-find \
+        unattended-upgrades \
     # Ubuntu renames both of these to avoid binary collisions (bacula, fdclone).
     # Without the symlinks, config expecting the upstream names silently no-ops.
     && ln --symbolic --force /usr/bin/batcat /usr/local/bin/bat \
@@ -65,6 +66,22 @@ RUN apt-get update \
     # `ln -s` happily creates a dangling link, so prove both resolve. Otherwise a
     # renamed or dropped package leaves a broken binary that only shows up in use.
     && bat --version && fd --version
+
+# Restore daily security updates for running VMs, independently of rebuilds.
+# --root=/ edits unit links offline; never start upgrade jobs in an image build.
+COPY files/zz-keel-auto-upgrades /etc/apt/apt.conf.d/zz-keel-auto-upgrades
+RUN chmod 0644 /etc/apt/apt.conf.d/zz-keel-auto-upgrades \
+    && systemctl --root=/ unmask apt-daily.service apt-daily-upgrade.service \
+        apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service \
+    && systemctl --root=/ enable apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service \
+    && systemctl --root=/ is-enabled apt-daily.timer \
+    && systemctl --root=/ is-enabled apt-daily-upgrade.timer \
+    && systemctl --root=/ is-enabled unattended-upgrades.service \
+    && eval "$(apt-config shell periodic APT::Periodic::Enable \
+        refresh APT::Periodic::Update-Package-Lists \
+        upgrades APT::Periodic::Unattended-Upgrade \
+        reboot Unattended-Upgrade::Automatic-Reboot)" \
+    && test "$periodic/$refresh/$upgrades/$reboot" = '1/1/1/false'
 
 # ---------------------------------------------------------------------------
 # 2. Unpackaged tools, from pinned upstream releases.

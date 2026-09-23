@@ -1,0 +1,7 @@
+// Override exeuntu's docker-disable-periodic-update (APT reads files in order).
+// Keep Ubuntu's default allowed origins; do not opt third-party repos in.
+APT::Periodic::Enable "1";
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+// Operators schedule required reboots; package updates may still restart services.
+Unattended-Upgrade::Automatic-Reboot "false";
